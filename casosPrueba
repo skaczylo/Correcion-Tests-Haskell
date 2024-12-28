@@ -1,0 +1,293 @@
+p1 = P 1 3 1
+p2 = P 0.5 4 4
+p3 = P 1 3 2
+p4 = P 0.5 2 2
+
+modelo1 = M 1 [p3,p2,p1,p4]
+modelo2 = M 2 [p1,p3,p4,p2]
+modelo3 = M 3 [p4,p3,p2,p1]
+
+test = T [modelo1,modelo2,modelo3]
+
+respuestaTest1= RT "Juan Rubio" 3 [(R 2), B , (R 3), (R 1)]
+respuestaTest2 =RT "Moreno" 2 [(R 1),(R 2),(R 2),(R 4)]
+
+respuestas = [respuestaTest1,respuestaTest2]
+estadisticas test respuestas
+
+
+
+
+{-
+Definiciones:
+El objetivo es definir un tipo Test y un tipo RespuestaTest
+El tipo Test esta compuesto por varios Modelos donde cada  Modelo tiene un numero que lo identifica y una lista de preguntas.
+El tipo RespuestaTest esta compuesto por el identificador del alumno, el modelo del examen que ha hecho y las respuestas.
+
+Teniendo esto en cuenta, he decidido modularizar la estructura para llegar al objetivo principal.
+Para ello he definido lo siguiente:
+Pregunta: valor de la pregunta; numero de alternativas; respuesta Correcta
+Respuesta: B blanco | R Int donde el primer constructor representa una respuesta en blacno y el segundo indica la opcion marcada
+
+Esto nos permite definir el dato 
+Modelo : M Int [Pregunta]
+y el dato
+RespuestaTest a : RT a Int [Respuesta] que recibe como argumento un tipo de dato "a" para represnetar el id del alumno; Int representa el modelo de examen realizado y [Respuesta] es la secuencia
+de las respuestas marcadas
+
+Por ultimo, teniendo el dato Modelo podemos finalmente definir el dato Test, que sera una lista de Modelos
+Test : T [Modelo]
+-}
+
+
+data Pregunta = P Float Int Int deriving (Eq,Show) --FLoat: valor pregunta; Int: numero alternativas; Int: Respuesta Correcta
+data Respuesta = B | R Int deriving Show --B:Respuesta en Blanco; R Int: Respuesta a la pregunta
+data TipoRespuesta = Blanco | Correcta | Erronea deriving (Show,Eq)
+data Modelo = M Int [Pregunta] deriving Show--Numero del modelo; Reordenacion de Pregunta
+
+
+data Test = T  [Modelo] deriving Show--Int:Modelo; [Modelo]: Lista de Modelos
+data RespuestaTest a = RT a Int [Respuesta]  deriving Show-- a: identificador; Int : modelo test; [Respuesta]: respuestas
+
+data Correccion a = C a Float Float String   deriving Show --a: identificador; Float : puntuacion total; Float: puntuacion sobre 10; mensaje de animo
+
+
+{-
+Una vez tenemos formalizados los tipos de datos. Procedemos a definir la funcion corrige:
+-}
+
+corrige::Test -> RespuestaTest a->Correccion a
+corrige (T ms) (RT id m' rs) = corregirModelo (seleccionarModelo (T ms) m') (RT id m' rs)
+
+seleccionarModelo::Test->Int ->Modelo
+seleccionarModelo (T ms) m' = (\[x]->x) [(M m ps)| (M m ps)<-ms,  m==m' ]
+
+
+corregirModelo :: Modelo->RespuestaTest a ->Correccion a
+corregirModelo (M m ps) (RT id m' rs) = let nota = (puntuacionDiez ps rs) in C id (puntuacionTotal ps rs)  nota (mensajeMotivacion nota)
+
+
+mensajeMotivacion:: Float ->String
+mensajeMotivacion nota 
+    |0 <= nota && nota <= 4 = "No te desanimes"
+    |4<nota && nota <5 = "Vas por buen camino"
+    |5<= nota && nota <7 = "Buen trabajo"
+    |7<= nota && nota <=10 = "Impresionante"
+
+
+puntuacionTotal:: [Pregunta]->[Respuesta]->Float
+puntuacionTotal (p:ps) (r:rs) = foldr (+) 0 (zipWith puntuarRespuesta (p:ps) (r:rs))
+
+puntuacionDiez::[Pregunta]->[Respuesta]->Float
+puntuacionDiez ps rs = sobreDiez (puntuacionTotal ps rs) (valorTotal ps)
+
+valorTotal::[Pregunta]->Float
+valorTotal ps = foldr (+) 0 (map (\(P v _ _ )->v) ps) 
+
+sobreDiez::Float->Float->Float
+sobreDiez pt vt = (pt*10)/vt
+
+corregirRespuesta::Pregunta->Respuesta->TipoRespuesta
+corregirRespuesta p B = Blanco
+corregirRespuesta (P v n c) (R r)
+    | c == r = Correcta
+    | otherwise = Erronea
+
+puntuarRespuesta:: Pregunta->Respuesta->Float
+puntuarRespuesta p B = 0 --Respuesta en blanco no puntua
+puntuarRespuesta (P v n c) r
+    |(corregirRespuesta (P v n c) r) == Blanco = 0
+    |(corregirRespuesta (P v n c) r) == Correcta = v
+    |(corregirRespuesta (P v n c) r) == Erronea = -(v)*(1 / (fromIntegral (n - 1)))
+   
+{-
+Puntuacion media
+numero medio de preguntas respondidas
+numero de suspensos;numero de aprobados; notables y sobresalientes
+frecuencias absolutas y relativas de respuestas correecttas, erroneas y en blanco
+pregunta con mejores resultados y peor resultado
+preguntas mas dejada en blanco y menos en blanco
+-}
+
+type Media = Float
+data Nota = Suspenso | Aprobado  | Notable  | Sobresaliente  deriving (Show,Eq)
+type ResumenNotas = [(Nota,Int)]
+type FrecAbs = [(TipoRespuesta,Int)]
+type FrecRel = [(TipoRespuesta,Float)]
+data Estadisticas = E Media ResumenNotas FrecAbs FrecRel PreguntaFiltrada PreguntaFiltrada PreguntaFiltrada PreguntaFiltrada 
+
+instance Show Estadisticas where
+    show(E media resumen frecAbs frecRel mejorPregunta peorPregunta masBlancos menosBlancos) =
+        "La media sobre 10 de todas las notas es: "++show media ++ "\n" ++
+        "La distribucion de las notas es la siguiente: "++ show resumen ++ "\n"++
+        "La frecuencia absoluta de cada tipo de respuesta es:"++show frecAbs ++"\n"++
+        "La frecuencia relativa de cada tipo de respuesta es:"++show frecRel ++"\n"++
+        "La pregunta con mejor resultado es " ++ show (mejorPregunta)++"\n"++
+        "La pregunta con peor resultado es " ++ show (peorPregunta)++ "\n"++
+        "La pregunta con mayor respuestas en blanco es " ++ show ( masBlancos)++"\n"++
+        "La pregunta con menor respuestas en blanco es " ++ show ( menosBlancos)++"\n"
+
+
+estadisticas::Test ->[RespuestaTest a ]->Estadisticas
+estadisticas test rts = let correcciones = corrigeRespuestas test rts in  
+                        E (media correcciones) (resumenNotas correcciones) (frecuenciaAbsoluta test rts) 
+                        (frecuenciaRelativa test rts) (mejorPregunta test rts) (peorPregunta test rts)
+                        (masBlancos test rts) (menosBlancos test rts)
+
+--Media
+media::[Correccion a ]->Float --Nota media sobre 10
+media cs = (sumaTotal cs) / fromIntegral(length( cs ))
+
+--Resumen Notas
+resumenNotas:: [Correccion a]->ResumenNotas
+resumenNotas cs = foldr (\(C _ _ nota _) resumen-> modificarResumen (clasificarNota nota) resumen) [(Suspenso,0 ),(Aprobado,0),(Notable,0),(Sobresaliente,0)] cs
+
+modificarResumen:: Nota ->ResumenNotas->ResumenNotas
+modificarResumen  nota  resumen = [(nota',n)|(nota',n)<-resumen, nota' /=  nota] ++ [(nota',n+1)| (nota',n)<-resumen, nota == nota']
+
+
+--Frecuencia Absoluta Respuestas
+{-
+Explicacion. Queremos obtener una lista del estilo [(Blanco,i),(Erronea,j),(Correcta,k)]
+donde i,j,k representan la cantidad de cada tipo.
+Para ello primero necesitamos saber para cada alumno el numero de cada tipo de repuesta que tiene
+[(Blanco,i_a),(Erronea,j_a),(Correcta,k_a)]  para todo alumno a
+
+¿Como obtenemos esta lista para cada alumno ?
+Primero clafisificamos sus respuestas mediante 
+
+zipWith corregirRespuesta ps rs 
+
+donde ps son las preguntas del modelo (adecuado del alumno) y rs son sus respuestas. Esto nos proporcionara una lista de respuestas del estilo
+[Correcta,Erronea,Blanco,Blanco,Correcta...]
+
+Teniendo esta lista podemos ya agruparlo en [(Blanco,i_a),(Erronea,j_a),(Correcta,k_a)] 
+
+mediante la funcion clasificarRespuestasAlumno.
+Esta funcion suma  +1 a cada tipo de Respuesta en [(Blanco,i_a),(Erronea,j_a),(Correcta,k_a)] segun la respuesta r_i perteneciente a (zipWith corregirRespuesta ps rs )
+mediante la combinacion de "foldr" y la funcion clasificarTipoRespuesta.
+
+Finalmente, una vez tenemos para cada alumno la lista [(Blanco,i_a),(Erronea,j_a),(Correcta,k_a)], volvemos a aplicar la misma idea  
+
+-}
+
+
+
+frecuenciaAbsoluta::Test ->[RespuestaTest a]->[(TipoRespuesta,Int)]
+frecuenciaAbsoluta test rs = foldr (\(tipo,n) frec -> map (sumarFrecuencia (tipo,n)) frec) [(Blanco,0),(Erronea,0),(Correcta,0)] (frecuenciaAlumnos test rs)
+
+sumarFrecuencia::(TipoRespuesta,Int)->(TipoRespuesta,Int)->(TipoRespuesta,Int)
+sumarFrecuencia (tipo,n) (tipo',m) = if (tipo == tipo') then (tipo',n+m) else (tipo',m)
+
+
+frecuenciaAlumnos:: Test->[RespuestaTest a]->[(TipoRespuesta,Int)] -- Concatenamos [(Blanco,i_a),(Erronea,j_a),(Correcta,k_a)] para todo alumno a
+frecuenciaAlumnos test rs = concat [frecuenciaAlumno (clasificarRespuesta test r) | r <-rs ] 
+
+
+frecuenciaAlumno::[TipoRespuesta]->[(TipoRespuesta,Int)] --[(Blanco,i_a),(Erronea,j_a),(Correcta,k_a)] 
+frecuenciaAlumno trs = foldr (\tipo frec -> map (sumarFrecuencia (tipo,1)) frec ) [(Blanco,0),(Erronea,0),(Correcta,0)] trs
+
+
+clasificarRespuesta:: Test ->RespuestaTest a ->[TipoRespuesta] --[Correcta,Erronea,Blanco,Blanco,Correcta...]
+clasificarRespuesta test (RT id m (r:rs)) = clasificarRespuestaAux (seleccionarModelo test m) (r:rs)
+clasificarRespuestaAux :: Modelo->[Respuesta]->[TipoRespuesta]
+clasificarRespuestaAux (M m ps) rs = zipWith corregirRespuesta ps rs 
+
+
+
+{-
+Para calcular la frecuencia relativa de cada tipo de Respuesta necesitamos saber su frecuencia absoluta y el numero total de 
+respuestas que hay.
+Luego si calculamos la frecuencia absoluta, podemos formar directamente  la lista de frecuencias relativas.
+Para cada par (tipo , n) de la lista frecAbs, formamos el nuevo par (tipo, n/total respuestas)
+-}
+frecuenciaRelativa::Test->[RespuestaTest a]->[(TipoRespuesta,Float)]
+frecuenciaRelativa test rs = let frecAbs = frecuenciaAbsoluta test rs in
+                            [(tipo, fromIntegral(n)/fromIntegral (respuestasTotales rs)) | (tipo,n)<-frecAbs]
+
+respuestasTotales::[RespuestaTest a]->Int
+respuestasTotales rts = foldr (\(RT _ _ rs) sum -> (length rts) + sum) 0 rts
+
+
+{-
+Pregunta con mejor y peor resultado.
+La pregunta con mejor resultado sera aquella que mas gente haya acertado,
+mientras la peor sera aquella que mas fallos y respuestas en blanco tenga
+
+PAra saber cual es la mejor pregunta haremos lo siguiente:
+De cada RespuestaTest calcularemos en una lista las preguntas que se han acertado; y esto lo concatenamos
+en otra lista que utilizaremos posteriormente para realizar el conteo
+-}
+data PreguntaFiltrada = Vacio  | PF (Pregunta,Int )
+instance Show PreguntaFiltrada where
+    show (PF (pregunta,n )) = show pregunta ++ " Total:"++show n
+    show Vacio = "Vacio \n"
+
+mejorPregunta:: Test->[RespuestaTest a]->PreguntaFiltrada
+mejorPregunta test rts = maximo (conteoTotal test rts Correcta) 
+
+peorPregunta::Test->[RespuestaTest a]->PreguntaFiltrada
+peorPregunta test rts = maximo ((conteoTotal test rts Erronea)++(conteoTotal test rts Blanco))
+
+masBlancos::Test->[RespuestaTest a]->PreguntaFiltrada
+masBlancos test rts = maximo ((conteoTotal test rts Blanco))
+
+menosBlancos::Test ->[RespuestaTest a]->PreguntaFiltrada
+menosBlancos test rts = minimo ((conteoTotal test rts Blanco))
+
+
+conteoTotal::Test->[RespuestaTest a]->(TipoRespuesta) ->[(Pregunta,Int)] --[(p_i,n_i),(p_j,n_j)...]
+conteoTotal test rts tipo= foldr conteo [] (preguntasTotales test rts tipo)
+
+conteo::Pregunta->[(Pregunta,Int)]->[(Pregunta,Int)]
+conteo p ls = if (elem p [ p'|(p',n)<-ls]) then [ l | l<-ls, fst l /= p ] ++ [(p,n+1)| (p,n)<-ls]
+            else ls ++ [(p,1)]
+
+
+preguntasTotales::Test->[RespuestaTest a]->TipoRespuesta->[Pregunta] --[p0,p1,p0,p2,p2,p1...]
+preguntasTotales test rts tipo = concat [filtrarTipoPregunta test r tipo | r<-rts]
+
+filtrarTipoPregunta::Test->RespuestaTest a->TipoRespuesta->[Pregunta]
+filtrarTipoPregunta test (RT _ m rs) tipo = filtrarTipoPreguntaAux (seleccionarModelo test m) rs tipo []
+
+filtrarTipoPreguntaAux::Modelo->[Respuesta]->TipoRespuesta->[Pregunta]->[Pregunta]
+filtrarTipoPreguntaAux modelo [] tipo acc = acc
+filtrarTipoPreguntaAux (M m (p:ps)) (r:rs) tipo acc = 
+                    if corregirRespuesta p r == tipo 
+                    then [p] ++ filtrarTipoPreguntaAux (M m ps) rs tipo acc
+                    else  filtrarTipoPreguntaAux (M m ps) rs tipo acc
+
+
+maximo:: [(Pregunta,Int)]->PreguntaFiltrada
+maximo [] = Vacio 
+maximo ps = maximoAux ps (head ps)
+maximoAux::[(Pregunta,Int)]->(Pregunta,Int)->PreguntaFiltrada
+maximoAux [] (p,m) = PF (p,m)
+maximoAux ((p,n):ps) (p',m) = if n >= m then maximoAux ps (p,n) else maximoAux ps (p',m)
+
+minimo:: [(Pregunta,Int)]->PreguntaFiltrada
+minimo [] = Vacio 
+minimo ps = minAux ps (head ps)
+minAux::[(Pregunta,Int)]->(Pregunta,Int)->PreguntaFiltrada
+minAux [] (p,m) = PF (p,m)
+minAux ((p,n):ps) (p',m) = if n <= m then minAux ps (p,n) else minAux ps (p',m)
+
+
+--Funciones Auxiliares
+corrigeRespuestas:: Test->[RespuestaTest a]->[Correccion a] 
+corrigeRespuestas test rts = map (corrige test) rts
+
+sumaTotal:: [Correccion a]->Float
+sumaTotal cs = foldr (\(C _ _ nota _) suma -> suma + nota) 0 cs
+
+clasificarNota:: Float->Nota
+clasificarNota nota
+    | nota < 5    =  Suspenso
+    | nota < 7    =  Aprobado
+    | nota < 9    =  Notable 
+    | otherwise   =  Sobresaliente
+
+
+
+
+
